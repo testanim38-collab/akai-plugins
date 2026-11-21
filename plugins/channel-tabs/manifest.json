@@ -3,7 +3,7 @@
   "id": "community.channel-tabs",
   "name": "Channel Tabs",
   "description": "Pin channels and direct messages to a mobile tab strip for quick switching.",
-  "author": "akai,
+  "author": "akai",
   "icon": "ChatIcon",
   "version": "1.0.0",
   "dependencies": {
