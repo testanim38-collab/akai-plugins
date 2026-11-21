@@ -1,25 +1,21 @@
 import { ActionSheetActionCreators } from '@valenced/discord/actions'
 import { Design } from '@valenced/discord/design'
-import { Stores } from '@valenced/discord/flux'
 import { getModules } from '@valenced/modules/finders'
 import { withName, withProps } from '@valenced/modules/finders/filters'
-import { after, before, instead } from '@valenced/patcher'
-import { createElement, isValidElement, useEffect } from 'react'
-import { Pressable, View } from 'react-native'
+import { after, instead } from '@valenced/patcher'
+import { Fragment, createElement, isValidElement, useEffect } from 'react'
+import { Dimensions } from 'react-native'
+import { HostMount, hostState } from './overlay'
 import SettingsComponent from './settings'
-import {
-  insertGroup,
-  navigate,
-  openSheet,
-  resetNavigation,
-  toast,
-} from './sheet'
+import { insertGroup, isChannelSheetKey, navigate, resetNavigation, toast } from './sheet'
+import { closeAll, closeWindow, openWindow } from './store'
 import type { FC, ReactElement, ReactNode } from 'react'
 
 export type PreviewMode = 'preview' | 'menu'
 export interface Settings {
   mode: PreviewMode
   debug: boolean
+  hostName: string
 }
 interface Channel {
   id: string
@@ -33,46 +29,55 @@ interface ChannelActionSheetProps {
 type ChannelActionSheet = FC<ChannelActionSheetProps>
 type SheetElement = ReactElement<{ children?: ReactNode; channel?: Channel }>
 
-const DEFAULTS: Settings = { mode: 'preview', debug: false }
-const NATIVE_KEY = 'AKAI_CHANNEL_PREVIEW_NATIVE_ACTIONS'
-const { ActionSheetRow, Text } = Design
-let previewSession: { previousGuildId: string; previousChannelId?: string; target: Channel } | undefined
-let showNativeActions: (() => void) | undefined
+const DEFAULTS: Settings = { mode: 'preview', debug: false, hostName: '' }
+// Root-level components that stay mounted while the app is open. The first one that
+// renders claims the overlay; the others render nothing. Override via settings.
+const HOST_CANDIDATES = ['AppContainer', 'App', 'RootNavigator', 'MainNavigator', 'ChatScreen']
+const { ActionSheetRow } = Design
 
-function startPreview(channel: Channel, openActions: () => void) {
-  const selectedId = (Stores.SelectedChannelStore as any)?.getChannelId?.()
-  const previous = selectedId ? (Stores.ChannelStore as any)?.getChannel?.(selectedId) : undefined
-  previewSession = {
-    previousGuildId: previous?.guild_id ?? previous?.guildId ?? '@me',
-    previousChannelId: selectedId,
-    target: channel,
-  }
-  showNativeActions = openActions
-  if (!navigate(channel.guild_id ?? '@me', channel.id)) {
-    previewSession = undefined
-    showNativeActions = undefined
-    toast('Could not open the preview')
-    return
-  }
-  toast(`Previewing ${channel.name ? `#${channel.name}` : 'channel'}`)
-}
-
-function returnFromPreview() {
-  const session = previewSession
-  if (!session) return
-  previewSession = undefined
-  showNativeActions = undefined
-  navigate(session.previousGuildId, session.previousChannelId)
+function openPreview(channel: Channel) {
+  openWindow(
+    { id: channel.id, guildId: channel.guild_id ?? '@me', name: channel.name ?? '' },
+    Dimensions.get('window'),
+  )
 }
 
 export default plugin<{ jsonStorage: Settings }>({
   jsonStorage: { load: true, default: DEFAULTS },
   start({ cleanup, jsonStorage, plugin }) {
-    const mode = () => jsonStorage.cache?.mode ?? DEFAULTS.mode
-    const debug = () => !!jsonStorage.cache?.debug
+    const settings = (): Settings => ({ ...DEFAULTS, ...(jsonStorage.cache ?? {}) })
+    const mode = () => settings().mode
+    const debug = () => settings().debug
 
-    // Discord renders the channel long-press sheet through this named module.
-    // Patching the module directly is more reliable than guessing its openLazy key.
+    hostState.onOpenFull = win => {
+      closeWindow(win.id)
+      if (!navigate(win.guildId, win.id)) toast('Could not open the channel')
+    }
+
+    const hideSheet = (props: ChannelActionSheetProps) => {
+      if (typeof props.onClose === 'function') props.onClose()
+      else ActionSheetActionCreators.hideActionSheet()
+    }
+
+    // Preview mode: intercept before the sheet opens, so there is never a sheet to
+    // close. (Closing it from inside its own render left an invisible layer that
+    // swallowed every touch.)
+    cleanup(
+      getModules(withProps<any>('openLazy', 'hideActionSheet'), module => {
+        cleanup(
+          instead(module as any, 'openLazy', ((args: any[], original: (...a: any[]) => unknown) => {
+            const [, key, props] = args
+            if (mode() === 'preview' && isChannelSheetKey(key, props)) {
+              if (debug()) toast(`Preview: intercepted ${String(key)}`)
+              openPreview(props.channel)
+              return undefined
+            }
+            return original(...args)
+          }) as any),
+        )
+      }),
+    )
+
     cleanup(
       getModules(
         withName<ChannelActionSheet>('ChannelLongPressActionSheet'),
@@ -82,36 +87,25 @@ export default plugin<{ jsonStorage: Settings }>({
             instead(module, 'default', (args, Sheet) => {
               const tree = Reflect.apply(Sheet, undefined, args) as SheetElement | null
               if (!tree || !isValidElement(tree)) return tree
-
               try {
                 const props = tree.props as ChannelActionSheetProps
                 const channel = props.channel
                 if (!channel?.id) return tree
-
                 const Inner = tree.type
                 if (typeof Inner !== 'function') return tree
 
-                const closeSheet = () => {
-                  if (typeof props.onClose === 'function') props.onClose()
-                  else ActionSheetActionCreators.hideActionSheet()
-                }
-                const openActions = () => {
-                  showNativeActions = undefined
-                  openSheet(Inner, NATIVE_KEY, props)
-                }
-
                 if (mode() === 'preview') {
+                  // Fallback if the openLazy hook above did not catch this sheet:
+                  // let the sheet finish opening, then close it and show the popup.
                   return createElement(function ChannelPreviewLauncher() {
                     useEffect(() => {
-                      closeSheet()
-                      startPreview(channel, openActions)
+                      setTimeout(() => hideSheet(props), 60)
+                      setTimeout(() => openPreview(channel), 350)
                     }, [])
                     return null
                   })
                 }
 
-                // The connected inner sheet owns the actual rows and receives the
-                // channel props; render it inside a wrapper and append our action.
                 const Wrapped: ChannelActionSheet = innerProps => {
                   const innerTree = (Inner as ChannelActionSheet)(innerProps) as ReactNode
                   const group = createElement(
@@ -120,8 +114,8 @@ export default plugin<{ jsonStorage: Settings }>({
                     createElement(ActionSheetRow, {
                       label: 'Preview channel',
                       onPress: () => {
-                        closeSheet()
-                        startPreview(channel, openActions)
+                        hideSheet(props)
+                        setTimeout(() => openPreview(channel), 300)
                       },
                     }),
                   )
@@ -140,72 +134,38 @@ export default plugin<{ jsonStorage: Settings }>({
         },
         { returnNamespace: true },
       ),
-
-      getModules(
-        withProps<{ transitionToGuild(guildId: string, channelId?: string): unknown }>('transitionToGuild'),
-        module => {
-          cleanup(
-            before(module as any, 'transitionToGuild', ((args: [string, string?]) => {
-              const [guildId, channelId] = args
-              if (previewSession && (guildId !== (previewSession.target.guild_id ?? '@me') || channelId !== previewSession.target.id)) {
-                previewSession = undefined
-                showNativeActions = undefined
-              }
-              return args
-            }) as any),
-          )
-        },
-      ),
-
-      getModules(
-        withName<FC>('ChannelHeader'),
-        module => {
-          const holder = module as any
-          const injectToolbar = (tree: ReactNode) => {
-            if (!previewSession || !isValidElement(tree)) return tree
-            const session = previewSession
-            const toolbar = createElement(
-              View,
-              {
-                style: {
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  paddingHorizontal: 12,
-                  paddingVertical: 7,
-                  backgroundColor: '#313338',
-                },
-              },
-              createElement(
-                View,
-                { style: { flex: 1 } },
-                createElement(Text, { variant: 'text-sm/semibold', color: 'text-normal' }, `Previewing ${session.target.name ? `#${session.target.name}` : 'channel'}`),
-                createElement(Text, { variant: 'text-xs/normal', color: 'text-muted' }, 'This is the real channel. Messages and actions work normally.'),
-              ),
-              createElement(
-                Pressable,
-                { onPress: () => showNativeActions?.(), style: { padding: 8 } },
-                createElement(Text, { color: 'text-link', variant: 'text-sm/semibold' }, 'Actions'),
-              ),
-              createElement(
-                Pressable,
-                { onPress: returnFromPreview, style: { padding: 8 } },
-                createElement(Text, { color: 'text-link', variant: 'text-sm/semibold' }, 'Return'),
-              ),
-            )
-            return createElement(View, { style: { width: '100%' } }, tree, toolbar)
-          }
-          if (typeof holder?.default === 'function') cleanup(after(holder, 'default', injectToolbar as any))
-          else if (typeof holder?.default?.type === 'function') cleanup(after(holder.default, 'type', injectToolbar as any))
-          else if (typeof holder?.type === 'function') cleanup(after(holder, 'type', injectToolbar as any))
-        },
-        { returnNamespace: true },
-      ),
     )
+
+    // Mount the floating-window host on a root component.
+    const names = [settings().hostName.trim(), ...HOST_CANDIDATES].filter(Boolean)
+    for (const name of names) {
+      cleanup(
+        getModules(
+          withName<FC>(name),
+          module => {
+            const holder = module as any
+            const inject = (tree: ReactNode) =>
+              createElement(
+                Fragment,
+                null,
+                tree as ReactNode,
+                createElement(HostMount, {
+                  key: 'akai-preview-host',
+                  label: name,
+                  onMounted: label => debug() && toast(`Preview host: ${label}`),
+                }),
+              )
+            if (typeof holder?.default === 'function') cleanup(after(holder, 'default', inject as any))
+            else if (typeof holder?.default?.type === 'function') cleanup(after(holder.default, 'type', inject as any))
+            else if (typeof holder?.type === 'function') cleanup(after(holder, 'type', inject as any))
+          },
+          { returnNamespace: true },
+        ),
+      )
+    }
   },
   stop() {
-    previewSession = undefined
-    showNativeActions = undefined
+    closeAll()
     resetNavigation()
   },
   SettingsComponent,

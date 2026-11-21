@@ -211,3 +211,11 @@ export function patchOpenLazy(factory: SheetFactory, cleanup: (...fns: Array<() 
     }),
   )
 }
+
+// Decide from the openLazy key + props alone (before the lazy sheet loads), so
+// preview mode can skip opening the sheet at all instead of opening and closing it.
+export function isChannelSheetKey(key: unknown, props: any) {
+  if (!channelOf(props) || props?.message) return false
+  const label = String(key ?? '')
+  return /channel/i.test(label) && /(longpress|actionsheet|actions?|menu)/i.test(label) && !EXCLUDE.test(label)
+}
