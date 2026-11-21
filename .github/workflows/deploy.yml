@@ -6,16 +6,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  build:
+  build-and-publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -30,28 +28,15 @@ jobs:
       - name: Verify output
         run: |
           ls -la build/pages
-          test -f build/pages/index.json || { echo "index.json missing"; exit 1; }
-          cat build/pages/index.json
+          test -f build/pages/index.json
 
-      - uses: actions/configure-pages@v6
-
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: build/pages
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
-
-      - name: Check live index
+      - name: Publish to gh-pages branch
         run: |
-          sleep 20
-          echo "Deployed to: ${{ steps.deployment.outputs.page_url }}"
-          curl -sS -o /dev/null -w "index.json -> HTTP %{http_code}\n" "${{ steps.deployment.outputs.page_url }}index.json"
+          touch build/pages/.nojekyll
+          cd build/pages
+          git init -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Deploy ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
