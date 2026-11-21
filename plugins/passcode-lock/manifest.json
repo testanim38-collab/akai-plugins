@@ -5,7 +5,7 @@
   "description": "Add a local passcode screen for app startup, servers, channels, and DMs.",
   "author": "akai",
   "icon": "LockIcon",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "dependencies": {
     "valenced.api": { "version": ">=1 <2" },
     "discord": { "version": "*" }

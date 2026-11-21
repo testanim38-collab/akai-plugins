@@ -18,19 +18,19 @@ Then open the repository in Valenced and install the plugins you want.
 
 ### Channel Preview
 
-**Version:** 1.0.0
+**Version:** 1.1.0
 
 Open channel previews from mobile long-press actions, with a quick return and channel actions.
 
 ### Channel Tabs
 
-**Version:** 1.0.0
+**Version:** 1.1.0
 
 Pin channels and direct messages to a mobile tab strip for quick switching.
 
 ### Passcode Lock
 
-**Version:** 1.0.0
+**Version:** 1.1.0
 
 Add a local passcode screen for app startup, servers, channels, and DMs.
 

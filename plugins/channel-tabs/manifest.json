@@ -5,7 +5,7 @@
   "description": "Pin channels and direct messages to a mobile tab strip for quick switching.",
   "author": "akai",
   "icon": "ChatIcon",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "dependencies": {
     "valenced.api": { "version": ">=1 <2" },
     "discord": { "version": "*" }
