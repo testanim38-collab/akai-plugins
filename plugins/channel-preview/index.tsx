@@ -7,7 +7,7 @@ import { Fragment, createElement, isValidElement, useEffect } from 'react'
 import { Dimensions } from 'react-native'
 import { HostMount, hostState } from './overlay'
 import SettingsComponent from './settings'
-import { insertGroup, isChannelSheetKey, navigate, resetNavigation, toast } from './sheet'
+import { channelOf, insertGroup, isChannelSheet, isChannelSheetKey, navigate, resetNavigation, toast } from './sheet'
 import { closeAll, closeWindow, openWindow } from './store'
 import type { FC, ReactElement, ReactNode } from 'react'
 
@@ -66,13 +66,22 @@ export default plugin<{ jsonStorage: Settings }>({
       getModules(withProps<any>('openLazy', 'hideActionSheet'), module => {
         cleanup(
           instead(module as any, 'openLazy', ((args: any[], original: (...a: any[]) => unknown) => {
-            const [, key, props] = args
-            if (mode() === 'preview' && isChannelSheetKey(key, props)) {
-              if (debug()) toast(`Preview: intercepted ${String(key)}`)
-              openPreview(props.channel)
-              return undefined
-            }
-            return original(...args)
+            const [sheet, key, props] = args
+            if (mode() !== 'preview' || !channelOf(props) || props?.message) return original(...args)
+            // Resolve the lazy sheet first so we can recognise it by component name,
+            // then either show our popup (and never open the sheet) or open it as usual.
+            return Promise.resolve(sheet).then(
+              (loaded: any) => {
+                const component = loaded?.default
+                if (isChannelSheet(String(key), props, component) || isChannelSheetKey(key, props)) {
+                  if (debug()) toast(`Preview: intercepted ${String(key)}`)
+                  openPreview(props.channel)
+                  return undefined
+                }
+                return original(Promise.resolve(loaded), ...args.slice(1))
+              },
+              () => original(...args),
+            )
           }) as any),
         )
       }),
@@ -99,8 +108,8 @@ export default plugin<{ jsonStorage: Settings }>({
                   // let the sheet finish opening, then close it and show the popup.
                   return createElement(function ChannelPreviewLauncher() {
                     useEffect(() => {
-                      setTimeout(() => hideSheet(props), 60)
-                      setTimeout(() => openPreview(channel), 350)
+                      setTimeout(() => hideSheet(props), 500)
+                      setTimeout(() => openPreview(channel), 850)
                     }, [])
                     return null
                   })

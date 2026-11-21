@@ -10,6 +10,8 @@ export interface PreviewWindow {
   w: number
   h: number
   z: number
+  bx: number
+  by: number
 }
 
 export const MAX_PREVIEWS = 5
@@ -55,6 +57,8 @@ export function openWindow(input: { id: string; guildId: string; name: string },
     w,
     h,
     z: ++zCounter,
+    bx: screen.width - 54,
+    by: 120,
   }
   // Drop the oldest preview when over the limit.
   commit([...windows, win].slice(-MAX_PREVIEWS))
@@ -62,6 +66,11 @@ export function openWindow(input: { id: string; guildId: string; name: string },
 
 export function patchWindow(id: string, patch: Partial<PreviewWindow>) {
   commit(windows.map(w => (w.id === id ? { ...w, ...patch } : w)))
+}
+
+export function minimizeWindow(id: string, screen: { width: number; height: number }) {
+  const slot = windows.filter(w => w.minimized).length
+  patchWindow(id, { minimized: true, bx: screen.width - 54, by: Math.min(110 + slot * 58, screen.height - 120) })
 }
 
 export const focusWindow = (id: string) => patchWindow(id, { z: ++zCounter })

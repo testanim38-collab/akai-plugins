@@ -18,7 +18,7 @@ Then open the repository in Valenced and install the plugins you want.
 
 ### Channel Preview
 
-**Version:** 1.3.0
+**Version:** 1.3.1
 
 Floating channel previews: long-press a channel to open a draggable, resizable popup over your current channel. Minimize to side bubbles, run several at once.
 
