@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "id": "community.channel-tabs",
+  "name": "Channel Tabs",
+  "description": "Pin channels and direct messages to a mobile tab strip for quick switching.",
+  "author": "akai,
+  "icon": "ChatIcon",
+  "version": "1.0.0",
+  "dependencies": {
+    "valenced.api": { "version": ">=1 <2" },
+    "discord": { "version": "*" }
+  },
+  "dist": { "script": "index.js" }
+}

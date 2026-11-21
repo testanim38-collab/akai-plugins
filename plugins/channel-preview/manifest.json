@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "id": "community.channel-preview",
+  "name": "Channel Preview",
+  "description": "Open channel previews from mobile long-press actions, with a quick return and channel actions.",
+  "author": "akai",
+  "icon": "ChatIcon",
+  "version": "1.0.0",
+  "dependencies": {
+    "valenced.api": { "version": ">=1 <2" },
+    "discord": { "version": "*" }
+  },
+  "dist": { "script": "index.js" }
+}
